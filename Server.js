@@ -1,0 +1,192 @@
+const express = require('express');
+const multer = require('multer');
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
+const fs = require('fs');
+
+const app = express();
+const port = 8090;
+
+const VORLAGEN_FILE = './vorlagen.json';
+
+// Standard-Vorlagen erstellen, falls keine Datei existiert
+if (!fs.existsSync(VORLAGEN_FILE)) {
+    const defaultVorlagen = {
+        "Spiele": ["Zustand", "Besitzer"],
+        "Bücher": ["Autor", "Seitenanzahl"]
+    };
+    fs.writeFileSync(VORLAGEN_FILE, JSON.stringify(defaultVorlagen, null, 2));
+}
+
+if (!fs.existsSync('./uploads')) fs.mkdirSync('./uploads');
+
+const db = new sqlite3.Database('./galerie.db', (err) => {
+    if (!err) {
+        db.run(`CREATE TABLE IF NOT EXISTS items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            image TEXT,
+            vorlage TEXT,
+            details TEXT
+        )`);
+    }
+});
+
+const storage = multer.diskStorage({
+    destination: './uploads/',
+    filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
+});
+const upload = multer({ storage: storage });
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use('/uploads', express.static('uploads'));
+
+// API: Vorlagen an den Browser senden
+app.get('/api/vorlagen', (req, res) => {
+    const data = fs.readFileSync(VORLAGEN_FILE);
+    res.json(JSON.parse(data));
+});
+
+// API: Neue Vorlage im Browser speichern
+app.post('/api/vorlagen', (req, res) => {
+    const { name, felder } = req.body; // felder ist ein Array z.B. ["Zustand", "Besitzer"]
+    const data = JSON.parse(fs.readFileSync(VORLAGEN_FILE));
+    data[name] = felder.split(',').map(f => f.trim());
+    fs.writeFileSync(VORLAGEN_FILE, JSON.stringify(data, null, 2));
+    res.redirect('/');
+});
+
+// Die Hauptseite
+app.get('/', (req, res) => {
+    db.all("SELECT * FROM items ORDER BY id DESC", [], (err, rows) => {
+        let cards = rows.map(item => {
+            let detailsHtml = '';
+            try {
+                const parsed = JSON.parse(item.details);
+                for (let key in parsed) {
+                    if(parsed[key]) detailsHtml += `<p class='text-sm text-gray-300'><strong>${key}:</strong> ${parsed[key]}</p>`;
+                }
+            } catch(e) { detailsHtml = `<p class='text-sm text-gray-300'>${item.details}</p>`; }
+
+            return `
+            <div class="bg-gray-800 rounded-xl overflow-hidden shadow-lg border border-gray-700 cursor-pointer hover:scale-105 transition-all" 
+                 onclick="alert('${item.title.replace(/'/g, "\\'")}\\n\\nKategorie: ${item.vorlage}\\n${detailsHtml.replace(/<[^>]*>/g, '\\n')}')">
+                <img src="/uploads/${item.image}" class="w-full h-64 object-cover">
+                <div class="p-4">
+                    <h3 class="text-lg font-bold text-white">${item.title}</h3>
+                    <span class="text-xs bg-blue-600 text-white px-2 py-1 rounded mt-2 inline-block">${item.vorlage}</span>
+                </div>
+            </div>`;
+        }).join('');
+
+        res.send(`
+        <!DOCTYPE html>
+        <html lang="de">
+        <head>
+            <title>Unsere Galerie</title>
+            <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+        </head>
+        <body class="bg-gray-950 text-gray-100 p-6 font-sans">
+            <div class="max-w-6xl mx-auto">
+                <h1 class="text-3xl font-extrabold mb-8 text-center text-blue-500">🖼️ Unsere Cover-Galerie</h1>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12 max-w-4xl mx-auto">
+                    <div class="bg-gray-900 p-6 rounded-2xl border border-gray-800">
+                        <h2 class="text-xl font-bold mb-4 text-blue-400">Neues Item eintragen</h2>
+                        <form action="/add" method="POST" enctype="multipart/form-data" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Titel</label>
+                                <input type="text" name="title" required class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-white">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Cover-Bild</label>
+                                <input type="file" name="image" accept="image/*" required class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-white">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Vorlage wählen</label>
+                                <select name="vorlage" id="vorlageSelect" onchange="rendereFelder()" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-white"></select>
+                            </div>
+                            <div id="dynamischeFelder" class="space-y-3 bg-gray-950 p-4 rounded-xl border border-gray-800 hidden"></div>
+                            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg">Speichern</button>
+                        </form>
+                    </div>
+
+                    <div class="bg-gray-900 p-6 rounded-2xl border border-gray-800">
+                        <h2 class="text-xl font-bold mb-4 text-green-400">Vorlagen-Manager</h2>
+                        <form action="/api/vorlagen" method="POST" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Name der neuen Vorlage</label>
+                                <input type="text" name="name" placeholder="z.B. Konsolen" required class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-white">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Felder (mit Komma trennen)</label>
+                                <input type="text" name="felder" placeholder="Hersteller, Seriennummer, Farbe" required class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-white">
+                            </div>
+                            <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded-lg">Vorlage erstellen / updaten</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+                    ${cards || '<p class="text-gray-500 text-center col-span-full">Noch keine Bilder.</p>'}
+                </div>
+            </div>
+
+            <script>
+                let globaleVorlagen = {};
+
+                async function ladeVorlagen() {
+                    const res = await fetch('/api/vorlagen');
+                    globaleVorlagen = await res.json();
+                    
+                    const select = document.getElementById('vorlageSelect');
+                    select.innerHTML = Object.keys(globaleVorlagen).map(v => \`<option value="\${v}">\${v}</option>\`).join('');
+                    rendereFelder();
+                }
+
+                function rendereFelder() {
+                    const typ = document.getElementById('vorlageSelect').value;
+                    const bereich = document.getElementById('dynamischeFelder');
+                    const felder = globaleVorlagen[typ] || [];
+                    
+                    if(felder.length === 0) {
+                        bereich.classList.add('hidden');
+                        return;
+                    }
+                    
+                    bereich.classList.remove('hidden');
+                    bereich.innerHTML = felder.map(f => \`
+                        <div>
+                            <label class="block text-xs mb-1 text-gray-400">\${f}</label>
+                            <input type="text" name="feld_\${f}" class="w-full bg-gray-800 border border-gray-700 rounded p-1 text-sm text-white">
+                        </div>
+                    \`).join('');
+                }
+
+                ladeVorlagen();
+            </script>
+        </body>
+        </html>
+        `);
+    });
+});
+
+app.post('/add', upload.single('image'), (req, res) => {
+    const { title, vorlage } = req.body;
+    const image = req.file ? req.file.filename : '';
+    
+    let details = {};
+    for (let key in req.body) {
+        if (key.startsWith('feld_')) {
+            details[key.replace('feld_', '')] = req.body[key];
+        }
+    }
+
+    db.run("INSERT INTO items (title, image, vorlage, details) VALUES (?, ?, ?, ?)", 
+        [title, image, vorlage, JSON.stringify(details)], 
+        () => res.redirect('/')
+    );
+});
+
+app.listen(port, () => console.log(`Galerie läuft auf Port ${port}`));
