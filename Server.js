@@ -7,7 +7,12 @@ const fs = require('fs');
 const app = express();
 const port = 8090;
 
-const VORLAGEN_FILE = './vorlagen.json';
+// Ordner für die persistenten Daten definieren
+const DATA_DIR = './data';
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+
+const VORLAGEN_FILE = path.join(DATA_DIR, 'vorlagen.json');
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 
 // Standard-Vorlagen erstellen, falls keine Datei existiert
 if (!fs.existsSync(VORLAGEN_FILE)) {
@@ -18,9 +23,10 @@ if (!fs.existsSync(VORLAGEN_FILE)) {
     fs.writeFileSync(VORLAGEN_FILE, JSON.stringify(defaultVorlagen, null, 2));
 }
 
-if (!fs.existsSync('./uploads')) fs.mkdirSync('./uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
 
-const db = new sqlite3.Database('./galerie.db', (err) => {
+// Datenbank im Daten-Ordner erstellen
+const db = new sqlite3.Database(path.join(DATA_DIR, 'galerie.db'), (err) => {
     if (!err) {
         db.run(`CREATE TABLE IF NOT EXISTS items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,15 +38,17 @@ const db = new sqlite3.Database('./galerie.db', (err) => {
     }
 });
 
+// Bilder-Upload einrichten (speichert im Daten-Ordner)
 const storage = multer.diskStorage({
-    destination: './uploads/',
+    destination: UPLOADS_DIR,
     filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
 });
 const upload = multer({ storage: storage });
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use('/uploads', express.static('uploads'));
+// Route, damit der Browser die Bilder aus dem richtigen Ordner laden kann
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 // API: Vorlagen an den Browser senden
 app.get('/api/vorlagen', (req, res) => {
@@ -50,14 +58,14 @@ app.get('/api/vorlagen', (req, res) => {
 
 // API: Neue Vorlage im Browser speichern
 app.post('/api/vorlagen', (req, res) => {
-    const { name, felder } = req.body; // felder ist ein Array z.B. ["Zustand", "Besitzer"]
+    const { name, felder } = req.body;
     const data = JSON.parse(fs.readFileSync(VORLAGEN_FILE));
     data[name] = felder.split(',').map(f => f.trim());
     fs.writeFileSync(VORLAGEN_FILE, JSON.stringify(data, null, 2));
     res.redirect('/');
 });
 
-// Die Hauptseite
+// Die Hauptseite (HTML-Oberfläche)
 app.get('/', (req, res) => {
     db.all("SELECT * FROM items ORDER BY id DESC", [], (err, rows) => {
         let cards = rows.map(item => {
@@ -172,6 +180,7 @@ app.get('/', (req, res) => {
     });
 });
 
+// Route zum Speichern der Items
 app.post('/add', upload.single('image'), (req, res) => {
     const { title, vorlage } = req.body;
     const image = req.file ? req.file.filename : '';
