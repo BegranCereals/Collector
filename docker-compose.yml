@@ -2,18 +2,13 @@ version: "3"
 
 services:
   collector:
-    # Wir wechseln auf das offizielle, voll einsatzbereite Node-Image
-    image: node:18-alpine
+    # "build: ." sagt Portainer: Nutze die Dockerfile im Git-Ordner, um das Image zu bauen
+    build: .
     container_name: collector
-    # Wir setzen die Umgebungsvariable direkt auf Produktion
-    environment:
-      - NODE_ENV=production
     ports:
       - "8090:8090"
     volumes:
-      # Sichert deine hochgeladenen Bilder und Daten auf dem Server
-      - /opt/stacks/collector_data:/app/data
-    # Wir installieren die 3 Pakete jetzt global im Container-System. 
-    # Dadurch ignoriert Docker den blockierten Ordner auf deiner Festplatte komplett!
-    command: sh -c "npm install -g express multer sqlite3 && NODE_PATH=$$(npm root -g) node server.js"
+      # Sichert deine hochgeladenen Daten auf dem Server
+      # In der server.js wird automatisch nach './data' gesucht, was hier gemountet ist
+      - /opt/stacks/collector_data:/usr/src/app/data
     restart: unless-stopped
