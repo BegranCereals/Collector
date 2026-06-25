@@ -1,0 +1,18 @@
+version: "3"
+
+services:
+  collector:
+    image: node:18-alpine
+    container_name: collector
+    working_dir: /app
+    ports:
+      - "8090:8090"
+    volumes:
+      # Holt deinen GitHub-Code in den Container
+      - .:/app
+      # Sichert deine Daten auf dem Server, damit sie bei Neustarts nicht gelöscht werden
+      - /opt/stacks/collector_data/uploads:/app/uploads
+      - /opt/stacks/collector_data/galerie.db:/app/galerie.db
+      - /opt/stacks/collector_data/vorlagen.json:/app/vorlagen.json
+    command: sh -c "npm install express multer sqlite3 && node server.js"
+    restart: unless-stopped
