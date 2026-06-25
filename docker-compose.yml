@@ -4,12 +4,11 @@ services:
   collector:
     image: node:18-alpine
     container_name: collector
-    # Wir nehmen working_dir komplett raus und steuern den Pfad direkt im Befehl an!
     ports:
       - "8090:8090"
     volumes:
-      # Sichert deine Daten auf dem Server, ohne die Skript-Dateien zu blockieren
-      - /opt/stacks/collector_data:/app_data
-    # Wir sagen npm und node jetzt unmissverständlich, wo sie arbeiten sollen, egal wo Docker startet
-    command: sh -c "cd /usr/src/app || cd /app || cd . && npm install express multer sqlite3 && node server.js"
+      # Wir sichern die Daten auf dem Server
+      - /opt/stacks/collector_data:/app/data
+    # Befehl bereinigt eventuelle npm-Sperren und startet direkt im aktuellen Ordner
+    command: sh -c "rm -rf package-lock.json node_modules && npm install express multer sqlite3 && node server.js"
     restart: unless-stopped
