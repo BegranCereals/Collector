@@ -62,7 +62,7 @@ app.post('/api/vorlagen', (req, res) => {
     const data = JSON.parse(fs.readFileSync(VORLAGEN_FILE));
     data[name] = felder.split(',').map(f => f.trim());
     fs.writeFileSync(VORLAGEN_FILE, JSON.stringify(data, null, 2));
-    res.redirect('/');
+    res.redirect(`http://${req.hostname}:${port}/`);
 });
 
 // Die Hauptseite (HTML-Oberfläche)
@@ -102,7 +102,7 @@ app.get('/', (req, res) => {
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12 max-w-4xl mx-auto">
                     <div class="bg-gray-900 p-6 rounded-2xl border border-gray-800">
                         <h2 class="text-xl font-bold mb-4 text-blue-400">Neues Item eintragen</h2>
-                        <form action="/add" method="POST" enctype="multipart/form-data" class="space-y-4">
+                        <form action="http://${req.hostname}:${port}/add" method="POST" enctype="multipart/form-data" class="space-y-4">
                             <div>
                                 <label class="block text-sm font-medium mb-1">Titel</label>
                                 <input type="text" name="title" required class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-white">
@@ -122,7 +122,7 @@ app.get('/', (req, res) => {
 
                     <div class="bg-gray-900 p-6 rounded-2xl border border-gray-800">
                         <h2 class="text-xl font-bold mb-4 text-green-400">Vorlagen-Manager</h2>
-                        <form action="/api/vorlagen" method="POST" class="space-y-4">
+                        <form action="http://${req.hostname}:${port}/api/vorlagen" method="POST" class="space-y-4">
                             <div>
                                 <label class="block text-sm font-medium mb-1">Name der neuen Vorlage</label>
                                 <input type="text" name="name" placeholder="z.B. Konsolen" required class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-white">
@@ -145,7 +145,7 @@ app.get('/', (req, res) => {
                 let globaleVorlagen = {};
 
                 async function ladeVorlagen() {
-                    const res = await fetch('/api/vorlagen');
+                    const res = await fetch('http://' + window.location.hostname + ':' + window.location.port + '/api/vorlagen');
                     globaleVorlagen = await res.json();
                     
                     const select = document.getElementById('vorlageSelect');
@@ -194,7 +194,7 @@ app.post('/add', upload.single('image'), (req, res) => {
 
     db.run("INSERT INTO items (title, image, vorlage, details) VALUES (?, ?, ?, ?)", 
         [title, image, vorlage, JSON.stringify(details)], 
-        () => res.redirect('/')
+        () => res.redirect(`http://${req.hostname}:${port}/`)
     );
 });
 
