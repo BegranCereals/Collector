@@ -2,13 +2,18 @@ version: "3"
 
 services:
   collector:
+    # Wir wechseln auf das offizielle, voll einsatzbereite Node-Image
     image: node:18-alpine
     container_name: collector
+    # Wir setzen die Umgebungsvariable direkt auf Produktion
+    environment:
+      - NODE_ENV=production
     ports:
       - "8090:8090"
     volumes:
-      # Wir sichern die Daten auf dem Server
+      # Sichert deine hochgeladenen Bilder und Daten auf dem Server
       - /opt/stacks/collector_data:/app/data
-    # Befehl bereinigt eventuelle npm-Sperren und startet direkt im aktuellen Ordner
-    command: sh -c "rm -rf package-lock.json node_modules && npm install express multer sqlite3 && node server.js"
+    # Wir installieren die 3 Pakete jetzt global im Container-System. 
+    # Dadurch ignoriert Docker den blockierten Ordner auf deiner Festplatte komplett!
+    command: sh -c "npm install -g express multer sqlite3 && NODE_PATH=$$(npm root -g) node server.js"
     restart: unless-stopped
