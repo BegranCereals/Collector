@@ -150,10 +150,22 @@ app.get('/', (req, res) => {
             </aside>
 
             <main class="flex-1 flex flex-col h-full relative overflow-hidden">
-                <header class="p-6 bg-gray-900/40 border-b border-gray-900 flex items-center justify-between backdrop-blur-md sticky top-0 z-10">
+                <header class="p-6 bg-gray-900/40 border-b border-gray-900 flex flex-col md:flex-row gap-4 items-center justify-between backdrop-blur-md sticky top-0 z-10">
                     <div class="relative w-full max-w-md">
                         <span class="material-icons absolute left-3 top-2.5 text-gray-400 text-xl">search</span>
                         <input type="text" id="suche" oninput="sucheUndFilter()" placeholder="Sammlung durchsuchen..." class="w-full bg-gray-800/80 border border-gray-700 rounded-xl pl-11 pr-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors">
+                    </div>
+
+                    <div class="flex items-center gap-2 w-full md:w-auto">
+                        <span class="material-icons text-gray-400 text-sm">sort</span>
+                        <select id="sortKey" onchange="sucheUndFilter()" class="bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer">
+                            <option value="id">Hinzugefügt am</option>
+                            <option value="title">Titel</option>
+                        </select>
+                        <select id="sortOrder" onchange="sucheUndFilter()" class="bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer">
+                            <option value="DESC">Absteigend</option>
+                            <option value="ASC">Aufsteigend</option>
+                        </select>
                     </div>
                     
                     <button onclick="openAddModal()" class="fixed top-4 right-6 z-50 bg-blue-600 hover:bg-blue-500 text-white font-bold p-4 rounded-full shadow-xl flex items-center justify-center hover:scale-110 transition-all cursor-pointer">
@@ -270,7 +282,7 @@ app.get('/', (req, res) => {
                                     <textarea name="felder" id="vorlageFormFelder" rows="8" placeholder="Zustand&#10;Kaufpreis&#10;Grafik:rating" required class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-green-500 whitespace-pre font-mono"></textarea>
                                 </div>
                                 <div class="flex gap-3">
-                                    <button type="submit" class="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 rounded-xl cursor-pointer transition-colors">Vorlage speichern</button>
+                                    <button type="submit" class="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 rounded-xl cursor-pointer transition-colors">Vorlage保存</button>
                                     <button type="button" id="vorlageDeleteBtn" onclick="loescheVorlage()" class="bg-red-600/20 text-red-400 border border-red-500/30 hover:bg-red-600 hover:text-white px-4 rounded-xl font-bold transition-all cursor-pointer hidden">Löschen</button>
                                 </div>
                             </form>
@@ -285,7 +297,8 @@ app.get('/', (req, res) => {
             <script>
                 let alleItems = ${itemsJson};
                 let globaleVorlagen = {};
-                let aktuelleKategorie = 'all';
+                // QoL: Lade die letzte aktive Kategorie aus dem localStorage oder nimm standardmäßig 'all'
+                let aktuelleKategorie = localStorage.getItem('collector_aktuelle_kategorie') || 'all';
                 let aktuellAngezeigteItemIds = [];
                 let aktuellerItemIndex = -1;
 
@@ -306,10 +319,15 @@ app.get('/', (req, res) => {
                     document.getElementById('itemFormImage').required = true;
                     document.getElementById('imageRequiredNote').classList.remove('hidden');
                     
-                    // Vorlagen Dropdown resetten
                     const keys = Object.keys(globaleVorlagen);
                     if(keys.length > 0) {
                         document.getElementById('vorlageSelect').disabled = false;
+                        
+                        // QoL: Wenn eine spezifische Kategorie aktiv ist, wähle sie automatisch im Dropdown vor
+                        if (aktuelleKategorie !== 'all' && keys.includes(aktuelleKategorie)) {
+                            document.getElementById('vorlageSelect').value = aktuelleKategorie;
+                        }
+                        
                         rendereFormularFelder();
                     }
                     openModal('itemModal');
@@ -319,7 +337,6 @@ app.get('/', (req, res) => {
                     const res = await fetch('/api/vorlagen');
                     globaleVorlagen = await res.json();
                     
-                    // Dropdown im Item-Modal befüllen
                     const select = document.getElementById('vorlageSelect');
                     if(Object.keys(globaleVorlagen).length > 0) {
                         select.innerHTML = Object.keys(globaleVorlagen).map(v => \`<option value="\${v}">\${v}</option>\`).join('');
@@ -329,7 +346,6 @@ app.get('/', (req, res) => {
                         select.disabled = true;
                     }
 
-                    // Sidebar Kategorien
                     const sidebar = document.getElementById('sidebarKategorien');
                     sidebar.innerHTML = Object.keys(globaleVorlagen).map(v => \`
                         <button onclick="filterKategorie('\${v}')" id="btn-\${v}" class="w-full text-left px-4 py-2 rounded-xl text-gray-400 hover:bg-gray-800/50 hover:text-gray-100 font-medium flex items-center gap-3 transition-all text-sm border border-transparent cursor-pointer">
@@ -337,7 +353,35 @@ app.get('/', (req, res) => {
                         </button>
                     \`).join('');
                     
-                    sucheUndFilter();
+                    // QoL: UI Zustand wiederherstellen
+                    filterKategorie(aktuelleKategorie);
+                }
+
+                // QoL: Passt die Sortieroptionen im Dropdown dynamisch an die Felder der aktuellen Kategorie an
+                function updateSortDropdownOptions() {
+                    const sortKeySelect = document.getElementById('sortKey');
+                    const aktuellerWert = sortKeySelect.value;
+                    
+                    // Standardoptionen zurücksetzen
+                    let html = \`
+                        <option value="id">Hinzugefügt am</option>
+                        <option value="title">Titel</option>
+                    \`;
+                    
+                    // Wenn eine Kategorie aktiv ist, füge alle Zusatzfelder hinzu
+                    if (aktuelleKategorie !== 'all' && globaleVorlagen[aktuelleKategorie]) {
+                        globaleVorlagen[aktuelleKategorie].forEach(f => {
+                            const reinesFeld = f.replace(':rating', '');
+                            html += \`<option value="details.\${reinesFeld}">Feld: \${reinesFeld}</option>\`;
+                        });
+                    }
+                    
+                    sortKeySelect.innerHTML = html;
+                    
+                    // Versuche alten Wert zu behalten, falls er noch existiert
+                    if ([...sortKeySelect.options].some(o => o.value === aktuellerWert)) {
+                        sortKeySelect.value = aktuellerWert;
+                    }
                 }
 
                 function rendereFormularFelder(vorausgefuellteDetails = {}) {
@@ -391,9 +435,14 @@ app.get('/', (req, res) => {
 
                 function filterKategorie(kat) {
                     aktuelleKategorie = kat;
+                    // QoL: Im Browser-Speicher sichern
+                    localStorage.setItem('collector_aktuelle_kategorie', kat);
+                    
                     document.querySelectorAll('[id^="btn-"]').forEach(btn => btn.classList.remove('bg-blue-600/10', 'text-blue-400', 'border-blue-500/20'));
                     const aktivBtn = document.getElementById('btn-' + kat);
                     if(aktivBtn) aktivBtn.classList.add('bg-blue-600/10', 'text-blue-400', 'border-blue-500/20');
+                    
+                    updateSortDropdownOptions();
                     sucheUndFilter();
                 }
 
@@ -401,13 +450,46 @@ app.get('/', (req, res) => {
                     const suchBegriff = document.getElementById('suche').value.toLowerCase();
                     const grid = document.getElementById('galerieGrid');
                     
-                    const gefiltert = alleItems.filter(item => {
+                    const sortKey = document.getElementById('sortKey').value;
+                    const sortOrder = document.getElementById('sortOrder').value;
+                    
+                    // 1. Filtern
+                    let gefiltert = alleItems.filter(item => {
                         const passtKategorie = (aktuelleKategorie === 'all' || item.vorlage === aktuelleKategorie);
                         const passtSuche = item.title.toLowerCase().includes(suchBegriff);
                         return passtKategorie && passtSuche;
                     });
 
-                    // Speichere die IDs für die Blättern-Reihenfolge ab
+                    // 2. QoL: Sortieren (Unterstützt ID, Titel und geschachtelte Zusatzfelder aus "details")
+                    gefiltert.sort((a, b) => {
+                        let valA, valB;
+                        
+                        if (sortKey.startsWith('details.')) {
+                            const subKey = sortKey.replace('details.', '');
+                            let detailsA = {}, detailsB = {};
+                            try { detailsA = JSON.parse(a.details) || {}; } catch(e){}
+                            try { detailsB = JSON.parse(b.details) || {}; } catch(e){}
+                            valA = detailsA[subKey] || '';
+                            valB = detailsB[subKey] || '';
+                            
+                            // Wenn es sich um Zahlen / Ratings handelt, als Zahl vergleichen
+                            if (!isNaN(valA) && !isNaN(valB) && valA !== '' && valB !== '') {
+                                valA = parseFloat(valA);
+                                valB = parseFloat(valB);
+                            }
+                        } else {
+                            valA = a[sortKey];
+                            valB = b[sortKey];
+                        }
+
+                        if (typeof valA === 'string') valA = valA.toLowerCase();
+                        if (typeof valB === 'string') valB = valB.toLowerCase();
+
+                        if (valA < valB) return sortOrder === 'ASC' ? -1 : 1;
+                        if (valA > valB) return sortOrder === 'ASC' ? 1 : -1;
+                        return 0;
+                    });
+
                     aktuellAngezeigteItemIds = gefiltert.map(i => i.id);
 
                     if(gefiltert.length === 0) {
@@ -428,7 +510,6 @@ app.get('/', (req, res) => {
                     \`).join('');
                 }
 
-                // DETAIL MODAL ÖFFNEN MIT PFEIL LOGIK
                 function openDetailModal(id) {
                     const item = alleItems.find(i => i.id === id);
                     if(!item) return;
@@ -445,8 +526,6 @@ app.get('/', (req, res) => {
                     try {
                         const details = JSON.parse(item.details);
                         let hatInhalt = false;
-                        
-                        // Versuche Felder aus der Vorlage zu ziehen um Ratings zu erkennen
                         const templateFields = globaleVorlagen[item.vorlage] || [];
 
                         for (let key in details) {
@@ -481,7 +560,6 @@ app.get('/', (req, res) => {
                     openModal('detailModal');
                 }
 
-                // BLÄTTERN LOGIK (Item per Item)
                 function blaettern(richtung, event) {
                     if(event) event.stopPropagation();
                     if(aktuellAngezeigteItemIds.length <= 1) return;
@@ -493,7 +571,6 @@ app.get('/', (req, res) => {
                     openDetailModal(aktuellAngezeigteItemIds[neuerIndex]);
                 }
 
-                // ITEM BEARBEITEN
                 function editAktuellesItem() {
                     const id = aktuellAngezeigteItemIds[aktuellerItemIndex];
                     const item = alleItems.find(i => i.id === id);
@@ -516,7 +593,6 @@ app.get('/', (req, res) => {
                     openModal('itemModal');
                 }
 
-                // ITEM LÖSCHEN
                 async function deleteAktuellesItem() {
                     const id = aktuellAngezeigteItemIds[aktuellerItemIndex];
                     if(!confirm("Möchtest du dieses Item wirklich unwiderruflich löschen?")) return;
@@ -532,7 +608,6 @@ app.get('/', (req, res) => {
                     }
                 }
 
-                // --- VORLAGEN MANAGER FUNKTIONEN ---
                 function openVorlagenManager() {
                     const listeDiv = document.getElementById('managerVorlagenListe');
                     listeDiv.innerHTML = Object.keys(globaleVorlagen).map(v => \`
@@ -583,7 +658,6 @@ app.get('/', (req, res) => {
                     }
                 }
 
-                // Tastatur-Navigation für die Galerie (Pfeiltasten zum Blättern!)
                 document.addEventListener('keydown', (e) => {
                     const detailModal = document.getElementById('detailModal');
                     if (!detailModal.classList.contains('hidden')) {
